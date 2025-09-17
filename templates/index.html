@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gemini Chatbot</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 0; }
+      .container { max-width: 800px; margin: 0 auto; padding: 16px; }
+      h1 { font-size: 1.25rem; margin: 8px 0 16px; }
+      #messages { border: 1px solid #5554; border-radius: 8px; padding: 12px; height: 60vh; overflow: auto; background: #00000006; }
+      .msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; }
+      .user { background: #3662ff22; }
+      .bot { background: #16a34a22; }
+      .row { display: flex; gap: 8px; margin-top: 12px; }
+      input[type="text"] { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #5554; }
+      button { padding: 10px 14px; border-radius: 8px; border: 1px solid #5554; background: #3662ff; color: white; cursor: pointer; }
+      button:disabled { opacity: 0.6; cursor: not-allowed; }
+      .top { display: flex; justify-content: space-between; align-items: center; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="top">
+        <h1>Gemini Chatbot</h1>
+        <button id="resetBtn" title="Start over">Reset</button>
+      </div>
+      <div id="messages" aria-live="polite"></div>
+      <div class="row">
+        <input id="input" type="text" placeholder="Type a message and press Enter..." />
+        <button id="sendBtn">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const messages = document.getElementById('messages');
+      const input = document.getElementById('input');
+      const sendBtn = document.getElementById('sendBtn');
+      const resetBtn = document.getElementById('resetBtn');
+
+      function addMessage(text, who) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + who;
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      async function sendMessage() {
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        addMessage(text, 'user');
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Request failed');
+          addMessage(data.reply, 'bot');
+        } catch (err) {
+          addMessage('Error: ' + err.message, 'bot');
+        } finally {
+          sendBtn.disabled = false;
+          input.focus();
+        }
+      }
+
+      sendBtn.addEventListener('click', sendMessage);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+      resetBtn.addEventListener('click', async () => {
+        await fetch('/api/reset', { method: 'POST' });
+        messages.innerHTML = '';
+        input.focus();
+      });
+
+      input.focus();
+    </script>
+  </body>
+</html>
