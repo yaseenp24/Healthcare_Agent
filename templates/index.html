@@ -21,9 +21,12 @@
       /* Chat area */
       .chat { flex: 1; display: flex; justify-content: center; overflow: hidden; }
       .chat-inner { width: 100%; max-width: 980px; padding: 16px; overflow: auto; }
-      .row-msg { display: flex; margin: 8px 0; }
+      .row-msg { display: flex; align-items: flex-end; gap: 8px; margin: 8px 0; }
       .row-msg.user { justify-content: flex-end; }
       .row-msg.bot { justify-content: flex-start; }
+      .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 16px; flex: 0 0 28px; }
+      .avatar.bot { background: #d1fae5; color: #065f46; }
+      .avatar.user { background: #38bdf8; color: #ffffff; }
       .bubble { max-width: 840px; padding: 12px 14px; border-radius: 14px; white-space: pre-wrap; line-height: 1.4; }
       .bubble.user { background: #e8eefc; color: #1f2937; border-top-right-radius: 6px; }
       .bubble.bot { background: #e9f7ef; color: #1f2937; border-top-left-radius: 6px; }
@@ -83,14 +86,20 @@
       function addMessage(text, who) {
         const row = document.createElement('div');
         row.className = 'row-msg ' + who;
+        const avatar = document.createElement('div');
+        avatar.className = 'avatar ' + who;
+        avatar.textContent = (who === 'bot') ? '🤖' : '👤';
         const bubble = document.createElement('div');
         bubble.className = 'bubble ' + who;
         if (who === 'bot') {
           bubble.innerHTML = linkify(text);
+          row.appendChild(avatar);
+          row.appendChild(bubble);
         } else {
           bubble.textContent = text;
+          row.appendChild(bubble);
+          row.appendChild(avatar);
         }
-        row.appendChild(bubble);
         messages.appendChild(row);
         messages.scrollTop = messages.scrollHeight;
       }
