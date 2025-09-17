@@ -18,6 +18,7 @@
       button { padding: 10px 14px; border-radius: 8px; border: 1px solid #5554; background: #3662ff; color: white; cursor: pointer; }
       button:disabled { opacity: 0.6; cursor: not-allowed; }
       .top { display: flex; justify-content: space-between; align-items: center; }
+      .bot a { color: #1d4ed8; text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -39,10 +40,26 @@
       const sendBtn = document.getElementById('sendBtn');
       const resetBtn = document.getElementById('resetBtn');
 
+      function escapeHTML(s) {
+        return s.replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+      }
+
+      function linkify(text) {
+        const escaped = escapeHTML(text);
+        const urlRegex = /(https?:\/\/[\w\-._~:\/?#\[\]@!$&'()*+,;=%]+)/g;
+        return escaped.replace(urlRegex, (m) => `<a href="${m}" target="_blank" rel="noopener noreferrer">link</a>`);
+      }
+
       function addMessage(text, who) {
         const div = document.createElement('div');
         div.className = 'msg ' + who;
-        div.textContent = text;
+        if (who === 'bot') {
+          div.innerHTML = linkify(text);
+        } else {
+          div.textContent = text;
+        }
         messages.appendChild(div);
         messages.scrollTop = messages.scrollHeight;
       }

@@ -120,6 +120,7 @@ def format_pharmacy_list(lat: float, lon: float, elements: List[Dict[str, Any]],
 
 
 ZIP_RE = re.compile(r"\b\d{5}(?:-\d{4})?\b")
+PHARM_INTENT_RE = re.compile(r"\b(pharmacy|pharmacies|drug ?store|chemist|chemists)\b", re.IGNORECASE)
 
 # ---------------------------------------------------------------------------
 
@@ -137,13 +138,13 @@ def chat_api():
 
     # Flow: detect pharmacy intent or await ZIP, otherwise pass to LLM
     awaiting = session.get("awaiting_zip")
-    lower = user_message.lower()
+    m_zip = ZIP_RE.search(user_message)
+    has_pharm_intent = bool(PHARM_INTENT_RE.search(user_message))
 
     if awaiting == "pharmacies":
-        m = ZIP_RE.search(user_message)
-        if not m:
+        if not m_zip:
             return jsonify({"reply": "Please enter a valid 5-digit ZIP code (e.g., 10001)."})
-        zip_code = m.group(0)
+        zip_code = m_zip.group(0)
         coords = geocode_zip(zip_code)
         if not coords:
             session.pop("awaiting_zip", None)
@@ -159,7 +160,22 @@ def chat_api():
         session["history"] = history
         return jsonify({"reply": reply_text})
 
-    if "pharmacy" in lower:
+    # One-shot: "pharmacies 92620"
+    if has_pharm_intent and m_zip:
+        zip_code = m_zip.group(0)
+        coords = geocode_zip(zip_code)
+        if not coords:
+            return jsonify({"reply": "Sorry, I could not find that ZIP code. Please try another."})
+        lat, lon = coords
+        elements = overpass_find_pharmacies(lat, lon)
+        reply_text = format_pharmacy_list(lat, lon, elements)
+        history: List[Dict[str, Any]] = session.get("history", [])
+        history.append({"role": "user", "parts": [{"text": user_message}]})
+        history.append({"role": "model", "parts": [{"text": reply_text}]})
+        session["history"] = history
+        return jsonify({"reply": reply_text})
+
+    if has_pharm_intent:
         session["awaiting_zip"] = "pharmacies"
         return jsonify({"reply": "Please enter your 5-digit ZIP code to find nearby pharmacies."})
 
