@@ -3,34 +3,62 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Gemini Chatbot</title>
+    <title>Health Assistant</title>
     <style>
       :root { color-scheme: light dark; }
-      body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 0; }
-      .container { max-width: 800px; margin: 0 auto; padding: 16px; }
-      h1 { font-size: 1.25rem; margin: 8px 0 16px; }
-      #messages { border: 1px solid #5554; border-radius: 8px; padding: 12px; height: 60vh; overflow: auto; background: #00000006; }
-      .msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; }
-      .user { background: #3662ff22; }
-      .bot { background: #16a34a22; }
-      .row { display: flex; gap: 8px; margin-top: 12px; }
-      input[type="text"] { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #5554; }
-      button { padding: 10px 14px; border-radius: 8px; border: 1px solid #5554; background: #3662ff; color: white; cursor: pointer; }
-      button:disabled { opacity: 0.6; cursor: not-allowed; }
-      .top { display: flex; justify-content: space-between; align-items: center; }
-      .bot a { color: #1d4ed8; text-decoration: underline; }
+      body { font-family: system-ui, Arial, sans-serif; margin: 0; padding: 0; height: 100vh; background: #f7fafc; }
+      .app { height: 100vh; display: flex; flex-direction: column; }
+
+      /* Header */
+      .header { padding: 16px 20px; border-bottom: 1px solid #e5e7eb; background: #ffffff; }
+      .header-inner { width: 100%; max-width: 980px; margin: 0 auto; display: flex; align-items: center; justify-content: center; position: relative; }
+      .logo { width: 28px; height: 28px; border-radius: 50%; background: #e6f4ea; display: grid; place-items: center; font-size: 16px; color: #10b981; margin-right: 10px; }
+      .title { display: flex; flex-direction: column; text-align: center; }
+      .title h1 { margin: 0; font-size: 18px; font-weight: 600; color: #111827; }
+      .title small { color: #6b7280; }
+      .reset { position: absolute; right: 0; top: 50%; transform: translateY(-50%); padding: 8px 12px; border-radius: 8px; border: 1px solid #e5e7eb; background: #f3f4f6; color: #111827; cursor: pointer; }
+
+      /* Chat area */
+      .chat { flex: 1; display: flex; justify-content: center; overflow: hidden; }
+      .chat-inner { width: 100%; max-width: 980px; padding: 16px; overflow: auto; }
+      .row-msg { display: flex; margin: 8px 0; }
+      .row-msg.user { justify-content: flex-end; }
+      .row-msg.bot { justify-content: flex-start; }
+      .bubble { max-width: 840px; padding: 12px 14px; border-radius: 14px; white-space: pre-wrap; line-height: 1.4; }
+      .bubble.user { background: #e8eefc; color: #1f2937; border-top-right-radius: 6px; }
+      .bubble.bot { background: #e9f7ef; color: #1f2937; border-top-left-radius: 6px; }
+      .bot a { color: #2563eb; text-decoration: underline; }
+
+      /* Input bar */
+      .composer { border-top: 1px solid #e5e7eb; background: #ffffff; padding: 12px 16px; display: flex; justify-content: center; }
+      .composer-inner { width: 100%; max-width: 980px; display: flex; gap: 10px; }
+      #input { flex: 1; padding: 12px 14px; border-radius: 12px; border: 1px solid #e5e7eb; background: #f9fafb; }
+      #sendBtn { padding: 12px 16px; border-radius: 12px; border: 1px solid #38bdf8; background: #38bdf8; color: white; cursor: pointer; }
+      #sendBtn:disabled { opacity: 0.6; cursor: not-allowed; }
     </style>
   </head>
   <body>
-    <div class="container">
-      <div class="top">
-        <h1>Gemini Chatbot</h1>
-        <button id="resetBtn" title="Start over">Reset</button>
+    <div class="app">
+      <div class="header">
+        <div class="header-inner">
+          <div class="logo">💚</div>
+          <div class="title">
+            <h1>Health Assistant</h1>
+            <small>Your trusted AI companion for health guidance</small>
+          </div>
+          <button id="resetBtn" class="reset" title="Start over">Reset</button>
+        </div>
       </div>
-      <div id="messages" aria-live="polite"></div>
-      <div class="row">
-        <input id="input" type="text" placeholder="Type a message and press Enter..." />
-        <button id="sendBtn">Send</button>
+
+      <div class="chat">
+        <div id="messages" class="chat-inner" aria-live="polite"></div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-inner">
+          <input id="input" type="text" placeholder="Ask me about your health concerns..." />
+          <button id="sendBtn">Send</button>
+        </div>
       </div>
     </div>
 
@@ -53,14 +81,17 @@
       }
 
       function addMessage(text, who) {
-        const div = document.createElement('div');
-        div.className = 'msg ' + who;
+        const row = document.createElement('div');
+        row.className = 'row-msg ' + who;
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble ' + who;
         if (who === 'bot') {
-          div.innerHTML = linkify(text);
+          bubble.innerHTML = linkify(text);
         } else {
-          div.textContent = text;
+          bubble.textContent = text;
         }
-        messages.appendChild(div);
+        row.appendChild(bubble);
+        messages.appendChild(row);
         messages.scrollTop = messages.scrollHeight;
       }
 
@@ -87,14 +118,24 @@
         }
       }
 
+      // Events
       sendBtn.addEventListener('click', sendMessage);
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
       resetBtn.addEventListener('click', async () => {
         await fetch('/api/reset', { method: 'POST' });
         messages.innerHTML = '';
+        addGreeting();
         input.focus();
       });
 
+      function addGreeting() {
+        if (messages.children.length === 0) {
+          addMessage("Hello! I'm your Health Assistant. I'm here to help answer your health-related questions and provide guidance when you're feeling unwell. How can I assist you today?", 'bot');
+        }
+      }
+
+      // Initial greeting
+      addGreeting();
       input.focus();
     </script>
   </body>
