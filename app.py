@@ -293,6 +293,7 @@ def answer_health_with_cse(user_question: str) -> Optional[str]:
         "- Cite claims with [number] and include the URL in parentheses.",
         "- If evidence is insufficient, say you cannot answer.",
         "- End with the disclaimer.",
+        "- Add note: 'Note: Some links may have moved since indexing.'",
     ]
     prompt = "\n".join(lines + instructions)
 
