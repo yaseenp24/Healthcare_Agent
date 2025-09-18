@@ -7,6 +7,7 @@ import google.generativeai as genai
 import requests
 import math
 import re
+from urllib.parse import urlparse
 
 
 app = Flask(__name__)
@@ -22,6 +23,16 @@ OSM_USER_AGENT = f"MedAssistant/1.0 ({OSM_CONTACT_EMAIL})"
 
 MAX_HISTORY_ITEMS = 8
 MAX_HISTORY_CHARS = 200
+
+# ------------------------- Google CSE configuration -------------------------
+GOOGLE_CSE_API_KEY = os.environ.get("GOOGLE_CSE_API_KEY")
+GOOGLE_CSE_CX = os.environ.get("GOOGLE_CSE_CX")
+# Optional hard allowlist, comma-separated domains like: example.com, who.int
+HEALTH_ALLOWED_DOMAINS = {
+    d.strip().lower()
+    for d in (os.environ.get("HEALTH_ALLOWED_DOMAINS", "").split(","))
+    if d.strip()
+}
 
 
 def get_model():
@@ -141,6 +152,16 @@ PHARM_INTENT_RE = re.compile(r"\b(pharmacy|pharmacies|drug ?store|chemist|chemis
 COUNT_RE = re.compile(r"\b(\d{1,2})\b")
 FOLLOWUP_WORDS_RE = re.compile(r"\b(closest|nearest|nearby|more)\b", re.IGNORECASE)
 
+# Health intent detection - made more inclusive
+HEALTH_INTENT_RE = re.compile(
+    r"\b(ibuprofen|acetaminophen|aspirin|tylenol|advil|motrin|aleve|"
+    r"symptom|symptoms|diagnos|treat|treatment|dose|dosage|side\s*effect|"
+    r"contraindicat|interact|medication|medicine|drug|vaccine|vaccination|"
+    r"condition|disease|infection|injury|pain|fever|cough|diarrhea|asthma|"
+    r"hypertension|diabetes|cancer|migraine|allergy|dermatitis|rash|anxiety|depression)\b",
+    re.IGNORECASE,
+)
+
 
 def extract_requested_count(text: str, default: int = 10) -> int:
     m = COUNT_RE.search(text)
@@ -167,6 +188,124 @@ def append_history(user_message: str, reply_text: str) -> None:
     if len(history) > MAX_HISTORY_ITEMS:
         history = history[-MAX_HISTORY_ITEMS:]
     session["history"] = history
+
+# ------------------------------ Health helpers ------------------------------
+
+def is_health_question(text: str) -> bool:
+    """Detect health-related questions (excluding pharmacy locator intent)."""
+    if PHARM_INTENT_RE.search(text):
+        return False
+    return bool(HEALTH_INTENT_RE.search(text))
+
+
+def _is_allowed_domain(url: str) -> bool:
+    if not url:
+        return False
+    try:
+        hostname = urlparse(url).hostname or ""
+        hostname = hostname.lower()
+        if not HEALTH_ALLOWED_DOMAINS:
+            # No explicit allowlist provided; rely on CSE restriction
+            return True
+        # Allow if hostname matches or is a subdomain of any allowed domain
+        for allowed in HEALTH_ALLOWED_DOMAINS:
+            if hostname == allowed or hostname.endswith("." + allowed):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def cse_search(query: str, num: int = 3) -> list[dict[str, str]]:
+    """Query Google CSE and return a list of {title, link, snippet}."""
+    if not GOOGLE_CSE_API_KEY or not GOOGLE_CSE_CX:
+        print("[DEBUG] CSE API key or CX not configured")
+        return []
+    try:
+        print(f"[DEBUG] CSE searching for: {query}")
+        resp = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "key": GOOGLE_CSE_API_KEY,
+                "cx": GOOGLE_CSE_CX,
+                "q": query,
+                "num": max(1, min(10, num)),
+                "safe": "active",
+                "hl": "en",
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("items") or []
+        print(f"[DEBUG] CSE returned {len(items)} results")
+        results: list[dict[str, str]] = []
+        for it in items:
+            title = (it.get("title") or "").strip()
+            link = (it.get("link") or "").strip()
+            snippet = (it.get("snippet") or "").strip()
+            if not link or not title:
+                continue
+            if not _is_allowed_domain(link):
+                print(f"[DEBUG] Blocked non-allowed domain: {link}")
+                continue
+            print(f"[DEBUG] Adding result: {title} - {link}")
+            results.append({"title": title, "link": link, "snippet": snippet})
+        return results
+    except Exception as e:
+        print(f"[DEBUG] CSE error: {e}")
+        return []
+
+
+def answer_health_with_cse(user_question: str) -> Optional[str]:
+    """Use CSE results to answer the health question with citations, or None if insufficient."""
+    results = cse_search(user_question, num=5)  # Get more results to increase chances
+    if not results:
+        return None
+
+    # Build a constrained prompt using only titles/snippets/URLs
+    lines: list[str] = [
+        "You are a cautious health information assistant.",
+        "You must use ONLY the sources provided below.",
+        "If the sources are insufficient or off-topic, say you cannot answer.",
+        "Cite sources as [1], [2], etc., and include the URL next to each citation.",
+        "Avoid diagnosis or prescribing. Provide general, educational guidance only.",
+        "Add this disclaimer at the end: This is educational information, not medical advice.",
+        "",
+        f"Question: {user_question}",
+        "",
+        "Sources:",
+    ]
+
+    for idx, r in enumerate(results, start=1):
+        title = r["title"]
+        url = r["link"]
+        snippet = r.get("snippet") or ""
+        lines.append(f"[{idx}] {title} — {url}")
+        if snippet:
+            lines.append(f"Snippet: {snippet}")
+        lines.append("")
+
+    instructions = [
+        "Instructions:",
+        "- Answer concisely in 4-8 sentences.",
+        "- Use only information supported by the sources.",
+        "- Cite claims with [number] and include the URL in parentheses.",
+        "- If evidence is insufficient, say you cannot answer.",
+        "- End with the disclaimer.",
+    ]
+    prompt = "\n".join(lines + instructions)
+
+    model = get_model()
+    chat = model.start_chat(history=[])
+    try:
+        resp = chat.send_message(prompt)
+        bot_text = (resp.text or "").strip()
+        if not bot_text:
+            return None
+        return bot_text
+    except Exception:
+        return None
 
 # ---------------------------------------------------------------------------
 
@@ -223,6 +362,22 @@ def chat_api():
         session["awaiting_zip"] = "pharmacies"
         session["pharmacy_limit"] = extract_requested_count(user_message, default=10)
         return jsonify({"reply": "Please enter your 5-digit ZIP code to find nearby pharmacies."})
+
+    # Health Q&A via Google CSE (non-pharmacy)
+    if is_health_question(user_message):
+        print(f"[DEBUG] Health question detected: {user_message}")
+        answer = answer_health_with_cse(user_message)
+        if answer:
+            append_history(user_message, answer)
+            return jsonify({"reply": answer})
+        else:
+            print("[DEBUG] CSE returned no answer")
+            decline = (
+                "I can't answer that health question based on the approved sources. "
+                "Please consult a qualified healthcare professional."
+            )
+            append_history(user_message, decline)
+            return jsonify({"reply": decline})
 
     # Default: route to Gemini with a tiny context
     history: List[Dict[str, Any]] = session.get("history", [])
