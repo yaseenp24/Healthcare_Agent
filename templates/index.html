@@ -47,9 +47,12 @@
           <div class="logo">💚</div>
           <div class="title">
             <h1>Health Assistant</h1>
-            <small>Your trusted AI companion for health guidance</small>
+            <small>Welcome, {{ username }}!</small>
           </div>
-          <button id="resetBtn" class="reset" title="Start over">Reset</button>
+          <div style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; gap: 10px;">
+            <button id="resetBtn" class="reset" title="Start over">Reset</button>
+            <a href="{{ url_for('logout') }}" class="reset" style="text-decoration: none;">Logout</a>
+          </div>
         </div>
       </div>
 
